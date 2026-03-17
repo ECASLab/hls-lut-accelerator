@@ -11,10 +11,14 @@ def relu(x):
 def exponential(x):
     return np.exp(x)
 
+def sigmoid(x):
+    return 1/(1+np.exp(-x))
+
 FUNCIONES = {
     "gelu": gelu, 
     "relu": relu,
-    "exp": exponential
+    "exp": exponential,
+    "sig": sigmoid
 }
 
 funcion = "exp"
@@ -94,9 +98,13 @@ def lut_hls_coeffs_header(cortes, m_list, b_list, filename="lut_coeffs.h"):
 
 # Parámetros
 ERROR_ADMITIDO = 0.01 # Precisión deseada 
-# Rango 
-RANGO_MIN = -4.0        
-RANGO_MAX = 4.0         
+# Rango
+if funcion == "sig":
+    RANGO_MIN = -10.0        
+    RANGO_MAX = 10.0
+else:
+    RANGO_MIN = -4.0        
+    RANGO_MAX = 4.0    
 
 # Ejecución del algoritmo
 pendientes, interceptos, cortes = pwl_no_uniforme(funcion_activa, RANGO_MIN, RANGO_MAX, ERROR_ADMITIDO)
