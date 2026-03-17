@@ -73,6 +73,25 @@ def pwl_no_uniforme(func, x_inicio, x_fin, error_max):
                 
     return lut_m, lut_b, puntos_corte
 
+
+def lut_hls_coeffs_header(cortes, m_list, b_list, filename="lut_coeffs.h"):
+    x0_list = cortes[:-1]
+    num_seg = len(m_list)
+
+    with open(filename, "w") as f:
+        f.write("#ifndef LUT_COEFFS_H\n#define LUT_COEFFS_H\n\n")
+        f.write(f"// Generado para: {funcion.upper()} \n")
+        f.write(f"#define MAX_SEG 128\n")
+        f.write(f"#define ACTUAL_SEG {num_seg}\n") 
+        f.write(f"#define X_MIN {RANGO_MIN}f\n")
+        f.write(f"#define X_MAX {RANGO_MAX}f\n")
+        is_exp = 1 if funcion == "exp" else 0
+        f.write(f"#define EXP_FUNC {is_exp}\n\n")
+        f.write("const float lut_x0[MAX_SEG] = {" + ", ".join([f"{x:.6f}f" for x in x0_list]) + ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
+        f.write("const float lut_m[MAX_SEG] = {" + ", ".join([f"{x:.6f}f" for x in m_list]) + ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
+        f.write("const float lut_b[MAX_SEG] = {" + ", ".join([f"{x:.6f}f" for x in b_list]) + ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
+        f.write("\n#endif")
+
 # Parámetros
 ERROR_ADMITIDO = 0.01 # Precisión deseada 
 # Rango 
@@ -81,6 +100,9 @@ RANGO_MAX = 4.0
 
 # Ejecución del algoritmo
 pendientes, interceptos, cortes = pwl_no_uniforme(funcion_activa, RANGO_MIN, RANGO_MAX, ERROR_ADMITIDO)
+
+#Generar header (.h) de los coeficientes de interpolación
+lut_hls_coeffs_header(cortes, pendientes, interceptos)
 
 print(f"\n=== TABLA DE MEMORIA (Look-Up Table)")
 print(f"{'Segmento':<10} | {'Breakpoint (x0)':<18} | {'Pendiente (m)':<18} | {'Intercepto (b)':<18}")
