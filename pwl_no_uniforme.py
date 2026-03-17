@@ -14,15 +14,19 @@ def exponential(x):
 def sigmoid(x):
     return 1/(1+np.exp(-x))
 
+def tanhiper(x):
+    return np.tanh(x)
+
 FUNCIONES = {
     "gelu": gelu, 
     "relu": relu,
     "exp": exponential,
-    "sig": sigmoid
+    "sig": sigmoid,
+    "tanh": tanhiper
 }
 
-funcion = "exp"
-funcion_activa = FUNCIONES['exp']
+funcion = "sig"
+funcion_activa = FUNCIONES['sig']
 
 def pwl_no_uniforme(func, x_inicio, x_fin, error_max):
     lut_m = []          # Lista para las pendientes
@@ -47,18 +51,20 @@ def pwl_no_uniforme(func, x_inicio, x_fin, error_max):
             m = (func(x1) - func(x0)) / ancho
             b = func(x0) #
             
+            
             # Verificar el error en el punto medio (donde suele ser máximo)
+            """"
             x_medio = x0 + (ancho / 2)
             y_real = func(x_medio)
             y_aprox = m * (x_medio - x0) + b
             error_calculado = abs(y_real - y_aprox)
+            """
             
-            """"
             x_test = np.linspace(x0,x1,20)
             y_real = func(x_test)
             y_aprox = m * (x_test - x0) + b
             error_calculado = np.max(np.abs(y_real - y_aprox))
-            """
+            
             
             # Criterio de decisión
             # Si el error es aceptable, el ancho ya es el mínimo permitido
@@ -99,12 +105,8 @@ def lut_hls_coeffs_header(cortes, m_list, b_list, filename="lut_coeffs.h"):
 # Parámetros
 ERROR_ADMITIDO = 0.01 # Precisión deseada 
 # Rango
-if funcion == "sig":
-    RANGO_MIN = -10.0        
-    RANGO_MAX = 10.0
-else:
-    RANGO_MIN = -4.0        
-    RANGO_MAX = 4.0    
+RANGO_MIN = -4.0        
+RANGO_MAX = 4.0    
 
 # Ejecución del algoritmo
 pendientes, interceptos, cortes = pwl_no_uniforme(funcion_activa, RANGO_MIN, RANGO_MAX, ERROR_ADMITIDO)
