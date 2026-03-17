@@ -25,8 +25,8 @@ FUNCIONES = {
     "tanh": tanhiper
 }
 
-funcion = "sig"
-funcion_activa = FUNCIONES['sig']
+funcion = "tanh"
+funcion_activa = FUNCIONES['tanh']
 
 def pwl_no_uniforme(func, x_inicio, x_fin, error_max):
     lut_m = []          # Lista para las pendientes
@@ -96,7 +96,15 @@ def lut_hls_coeffs_header(cortes, m_list, b_list, filename="lut_coeffs.h"):
         f.write(f"#define X_MIN {RANGO_MIN}f\n")
         f.write(f"#define X_MAX {RANGO_MAX}f\n")
         is_exp = 1 if funcion == "exp" else 0
-        f.write(f"#define EXP_FUNC {is_exp}\n\n")
+        f.write(f"#define EXP_FUNC {is_exp}\n")
+        is_gelu = 1 if funcion == "gelu" else 0
+        f.write(f"#define GELU_FUNC {is_gelu}\n")
+        is_relu = 1 if funcion == "relu" else 0
+        f.write(f"#define RELU_FUNC {is_relu}\n")
+        is_sig = 1 if funcion == "sig" else 0
+        f.write(f"#define SIG_FUNC {is_sig}\n")
+        is_tanh = 1 if funcion == "tanh" else 0
+        f.write(f"#define TANH_FUNC {is_tanh}\n\n")
         f.write("const float lut_x0[MAX_SEG] = {" + ", ".join([f"{x:.6f}f" for x in x0_list]) + ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
         f.write("const float lut_m[MAX_SEG] = {" + ", ".join([f"{x:.6f}f" for x in m_list]) + ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
         f.write("const float lut_b[MAX_SEG] = {" + ", ".join([f"{x:.6f}f" for x in b_list]) + ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
