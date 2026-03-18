@@ -1,3 +1,8 @@
+""""
+Autor: Patrick Hugo Nepveu Nelson <patrick.cr1405@gmail.com>
+Año: 2026 ECASLab
+"""
+
 import numpy as np
 import matplotlib.pyplot as plt
 
@@ -25,8 +30,8 @@ FUNCIONES = {
     "tanh": tanhiper
 }
 
-funcion = "tanh"
-funcion_activa = FUNCIONES['tanh']
+funcion = "gelu"
+funcion_activa = FUNCIONES['gelu']
 
 def pwl_no_uniforme(func, x_inicio, x_fin, error_max):
     lut_m = []          # Lista para las pendientes
@@ -49,7 +54,7 @@ def pwl_no_uniforme(func, x_inicio, x_fin, error_max):
             
             # m = (y1 - y0) / ancho
             m = (func(x1) - func(x0)) / ancho
-            b = func(x0) #
+            b = func(x0) #intercept local
             
             
             # Verificar el error en el punto medio (donde suele ser máximo)
@@ -62,7 +67,7 @@ def pwl_no_uniforme(func, x_inicio, x_fin, error_max):
             
             x_test = np.linspace(x0,x1,20)
             y_real = func(x_test)
-            y_aprox = m * (x_test - x0) + b
+            y_aprox = m * (x_test - x0) + b   #point-slope
             error_calculado = np.max(np.abs(y_real - y_aprox))
             
             
@@ -88,27 +93,47 @@ def lut_hls_coeffs_header(cortes, m_list, b_list, filename="lut_coeffs.h"):
     x0_list = cortes[:-1]
     num_seg = len(m_list)
 
+    # Use the same widths you want in hardware
+    bit_width = 32
+    int_width = 16
+
     with open(filename, "w") as f:
         f.write("#ifndef LUT_COEFFS_H\n#define LUT_COEFFS_H\n\n")
+        f.write("#include <ap_fixed.h>\n\n")
         f.write(f"// Generado para: {funcion.upper()} \n")
+        
+        # Metadata y Macros
         f.write(f"#define MAX_SEG 128\n")
         f.write(f"#define ACTUAL_SEG {num_seg}\n") 
         f.write(f"#define X_MIN {RANGO_MIN}f\n")
         f.write(f"#define X_MAX {RANGO_MAX}f\n")
-        is_exp = 1 if funcion == "exp" else 0
-        f.write(f"#define EXP_FUNC {is_exp}\n")
-        is_gelu = 1 if funcion == "gelu" else 0
-        f.write(f"#define GELU_FUNC {is_gelu}\n")
-        is_relu = 1 if funcion == "relu" else 0
-        f.write(f"#define RELU_FUNC {is_relu}\n")
-        is_sig = 1 if funcion == "sig" else 0
-        f.write(f"#define SIG_FUNC {is_sig}\n")
-        is_tanh = 1 if funcion == "tanh" else 0
-        f.write(f"#define TANH_FUNC {is_tanh}\n\n")
-        f.write("const float lut_x0[MAX_SEG] = {" + ", ".join([f"{x:.6f}f" for x in x0_list]) + ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
-        f.write("const float lut_m[MAX_SEG] = {" + ", ".join([f"{x:.6f}f" for x in m_list]) + ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
-        f.write("const float lut_b[MAX_SEG] = {" + ", ".join([f"{x:.6f}f" for x in b_list]) + ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
+        
+        # Funciones
+        f.write(f"#define EXP_FUNC {1 if funcion == 'exp' else 0}\n")
+        f.write(f"#define GELU_FUNC {1 if funcion == 'gelu' else 0}\n")
+        f.write(f"#define RELU_FUNC {1 if funcion == 'relu' else 0}\n")
+        f.write(f"#define SIG_FUNC {1 if funcion == 'sig' else 0}\n")
+        f.write(f"#define TANH_FUNC {1 if funcion == 'tanh' else 0}\n\n")
+
+        # Configuración data type
+        f.write(f"#ifndef KDATAWIDTH_FIXED\n#define KDATAWIDTH_FIXED {bit_width}\n#endif\n")
+        f.write(f"#ifndef KFXPDATAINT\n#define KFXPDATAINT {int_width}\n#endif\n\n")
+
+        f.write(f"typedef ap_fixed<{bit_width}, {int_width}> LutT;\n\n")
+
+        #LUTs
+        f.write("const LutT lut_x0[MAX_SEG] = {" + ", ".join([f"{x:.8f}f" for x in x0_list]) + 
+                ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
+        
+        f.write("const LutT lut_m[MAX_SEG] = {" + ", ".join([f"{x:.8f}f" for x in m_list]) + 
+                ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
+        
+        f.write("const LutT lut_b[MAX_SEG] = {" + ", ".join([f"{x:.8f}f" for x in b_list]) + 
+                ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
+        
         f.write("\n#endif")
+
+
 
 # Parámetros
 ERROR_ADMITIDO = 0.01 # Precisión deseada 
