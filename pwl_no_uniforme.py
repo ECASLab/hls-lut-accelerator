@@ -6,7 +6,7 @@ Año: 2026 ECASLab
 import numpy as np
 import matplotlib.pyplot as plt
 
-
+#Funciones no-lineales
 def gelu(x):
     return 0.5 * x * (1 + np.tanh(np.sqrt(2 / np.pi) * (x + 0.044715 * x**3)))
 
@@ -22,16 +22,25 @@ def sigmoid(x):
 def tanhiper(x):
     return np.tanh(x)
 
+def swish(x,beta=1):
+    return x / (1 + np.exp(-beta * x))
+
+
+
 FUNCIONES = {
     "gelu": gelu, 
     "relu": relu,
     "exp": exponential,
     "sig": sigmoid,
-    "tanh": tanhiper
+    "tanh": tanhiper,
+    "swish": swish
 }
 
-funcion = "gelu"
-funcion_activa = FUNCIONES['gelu']
+funcion = "exp"
+funcion_activa = FUNCIONES['exp']
+
+
+
 
 def pwl_no_uniforme(func, x_inicio, x_fin, error_max):
     lut_m = []          # Lista para las pendientes
@@ -57,7 +66,7 @@ def pwl_no_uniforme(func, x_inicio, x_fin, error_max):
             b = func(x0) #intercept local
             
             
-            # Verificar el error en el punto medio (donde suele ser máximo)
+            # Verificar el error en el punto medio (donde suele ser máximo)  
             """"
             x_medio = x0 + (ancho / 2)
             y_real = func(x_medio)
@@ -85,58 +94,89 @@ def pwl_no_uniforme(func, x_inicio, x_fin, error_max):
             else:
                 # Si el error es mucho, se reduce el ancho a la mitad (mantiene potencia de 2)
                 ancho /= 2.0
+            
                 
     return lut_m, lut_b, puntos_corte
 
 
-def lut_hls_coeffs_header(cortes, m_list, b_list, filename="lut_coeffs.h"):
-    x0_list = cortes[:-1]
-    num_seg = len(m_list)
 
-    # Use the same widths you want in hardware
-    bit_width = 32
-    int_width = 16
+
+
+def lut_hls_coeffs_header(cortes, m_list, b_list, bit_width=12, int_width=6, filename="lut_coeffs.h"):
+
+    
+
+    frac_bits = bit_width - int_width
+    
+    #paso mínimo, equivale a 2^-6
+    STEP_MIN = 0.015625  
+    #cantidad de slots uniformes que caben en el rango 
+    NUM_SLOTS = int((RANGO_MAX - RANGO_MIN) / STEP_MIN)
+
+    #LUT uniforme 
+    segment_map = []
+    for i in range(NUM_SLOTS):
+        x_val = RANGO_MIN + (i * STEP_MIN) + (STEP_MIN / 2)
+        found = False
+        for seg_idx in range(len(cortes) - 1):
+            if x_val >= cortes[seg_idx] and x_val < cortes[seg_idx+1]:
+                segment_map.append(seg_idx)
+                found = True
+                break
+        if not found: segment_map.append(len(m_list) - 1)
+
+    def to_fixed_hex(val):
+        # Multiplicar por 2^frac_bits para eliminar parte fraccionaria
+        scaled = int(round(val * (2**frac_bits)))
+        # Two's Complement con base a bit_width
+        if scaled < 0:
+            scaled = (1 << bit_width) + scaled
+        
+        #división por exceso (A+B-1)//B
+        hex_len = (bit_width + 3) // 4
+        #formato HEX de python - 0:{hex_len} es para padding con 0s y X para la conversión
+        return f"0x{scaled & ((1 << bit_width) - 1):0{hex_len}X}"
+    
+    x_min_raw = to_fixed_hex(RANGO_MIN)
+    x_max_raw = to_fixed_hex(RANGO_MAX)
 
     with open(filename, "w") as f:
+        f.write(f"// Autor: Patrick Hugo Nepveu Nelson <patrick.cr1405@gmail.com>\n")
+        f.write(f"// Año: 2026 ECASLab\n")
+        f.write(f"// Generado para <{bit_width},{int_width}> \n \n")
         f.write("#ifndef LUT_COEFFS_H\n#define LUT_COEFFS_H\n\n")
-        f.write("#include <ap_fixed.h>\n\n")
-        f.write(f"// Generado para: {funcion.upper()} \n")
         
-        # Metadata y Macros
-        f.write(f"#define MAX_SEG 128\n")
-        f.write(f"#define ACTUAL_SEG {num_seg}\n") 
-        f.write(f"#define X_MIN {RANGO_MIN}f\n")
-        f.write(f"#define X_MAX {RANGO_MAX}f\n")
-        
-        # Funciones
-        f.write(f"#define EXP_FUNC {1 if funcion == 'exp' else 0}\n")
+
+        f.write(f"#define EXP_FUNC  {1 if funcion == 'exp' else 0}\n")
+        f.write(f"#define SIG_FUNC  {1 if funcion == 'sig' else 0}\n")
+        f.write(f"#define TANH_FUNC {1 if funcion == 'tanh' else 0}\n")
         f.write(f"#define GELU_FUNC {1 if funcion == 'gelu' else 0}\n")
-        f.write(f"#define RELU_FUNC {1 if funcion == 'relu' else 0}\n")
-        f.write(f"#define SIG_FUNC {1 if funcion == 'sig' else 0}\n")
-        f.write(f"#define TANH_FUNC {1 if funcion == 'tanh' else 0}\n\n")
+        f.write(f"#define RELU_FUNC {1 if funcion == 'relu' else 0}\n\n")
+        f.write(f"#define SWISH_FUNC {1 if funcion == 'swish' else 0}\n\n")
 
-        # Configuración data type
-        f.write(f"#ifndef KDATAWIDTH_FIXED\n#define KDATAWIDTH_FIXED {bit_width}\n#endif\n")
-        f.write(f"#ifndef KFXPDATAINT\n#define KFXPDATAINT {int_width}\n#endif\n\n")
 
-        f.write(f"typedef ap_fixed<{bit_width}, {int_width}> LutT;\n\n")
+        f.write(f"#define X_MIN {x_min_raw}\n") 
+        f.write(f"#define X_MAX {x_max_raw}\n")
+        f.write(f"#define ACTUAL_SEG {len(m_list)}\n")
+        f.write(f"#define MAP_SIZE {NUM_SLOTS}\n\n")
+        f.write(f"#define MAX_SEG 128 \n\n")
 
-        #LUTs
-        f.write("const LutT lut_x0[MAX_SEG] = {" + ", ".join([f"{x:.8f}f" for x in x0_list]) + 
-                ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
-        
-        f.write("const LutT lut_m[MAX_SEG] = {" + ", ".join([f"{x:.8f}f" for x in m_list]) + 
-                ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
-        
-        f.write("const LutT lut_b[MAX_SEG] = {" + ", ".join([f"{x:.8f}f" for x in b_list]) + 
-                ", " + ", ".join(["0.0f"]*(128-num_seg)) + "};\n")
-        
-        f.write("\n#endif")
+ 
+        f.write("const uint8_t segment_map[MAP_SIZE] = {\n    ") # con MAX_SEG en 128, con uint8_t se puede guardar hasta 255
+        f.write(", ".join([str(x) for x in segment_map]) + "\n};\n\n")
+        storage_type = "uint16_t" if bit_width <= 16 else "uint32_t" if bit_width <= 32 else "uint64_t"
+        f.write(f"const {storage_type} lut_x0_raw[MAX_SEG] = {{\n    ")
+        f.write(", ".join([to_fixed_hex(x) for x in cortes[:-1]]) + "};\n\n")  
+        f.write(f"const {storage_type} lut_m_raw[MAX_SEG] = {{\n    ")
+        f.write(", ".join([to_fixed_hex(m) for m in m_list]) + "};\n\n")    
+        f.write(f"const {storage_type} lut_b_raw[MAX_SEG] = {{\n    ")
+        f.write(", ".join([to_fixed_hex(b) for b in b_list]) + "};\n\n")   
+        f.write("#endif\n")
 
 
 
 # Parámetros
-ERROR_ADMITIDO = 0.01 # Precisión deseada 
+ERROR_ADMITIDO = 0.005# Precisión deseada 
 # Rango
 RANGO_MIN = -4.0        
 RANGO_MAX = 4.0    
