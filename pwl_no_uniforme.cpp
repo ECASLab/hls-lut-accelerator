@@ -122,9 +122,12 @@ static void compute_engine(StreamT &inStream, StreamT &outStream, uint64_t size,
     #pragma HLS INLINE off
     const uint64_t n_packets = size / kPackets;
 
-    // Buffer de 512 bits para guardar paquetes completos en 1 ciclo
-    static RawDataT internal_buffer[2048]; 
-    #pragma HLS BIND_STORAGE variable=internal_buffer type=ram_2p impl=uram
+    // Buffers de 512 bits para guardar paquetes completos en 1 ciclo
+    // Usar dos para eliminar la dependencia RAW (Read-After-Write)
+    static RawDataT internal_buffer_in[2048];
+    static RawDataT internal_buffer_out[2048]; 
+    #pragma HLS BIND_STORAGE variable=internal_buffer_in type=ram_2p impl=uram
+    #pragma HLS BIND_STORAGE variable=internal_buffer_out type=ram_2p impl=uram
 
     if (mode == 1) { // Modo softmax
         // Pass 1: Máximo global
@@ -134,7 +137,7 @@ static void compute_engine(StreamT &inStream, StreamT &outStream, uint64_t size,
         p1_max: for (uint64_t p = 0; p < n_packets; p++) {
             #pragma HLS PIPELINE II=1
             RawDataT raw = inStream.read();
-            internal_buffer[p] = raw; // Buffer para Pass 2
+            internal_buffer_in[p] = raw; // Buffer para Pass 2
             
             DataT lanes[kPackets];
             #pragma HLS ARRAY_PARTITION variable=lanes complete
@@ -150,7 +153,7 @@ static void compute_engine(StreamT &inStream, StreamT &outStream, uint64_t size,
         DataT global_sum = 0;
         p2_exp_sum: for (uint64_t p = 0; p < n_packets; p++) {
             #pragma HLS PIPELINE II=1
-            RawDataT raw = internal_buffer[p];
+            RawDataT raw = internal_buffer_in[p];
             RawDataT raw_exp;
             DataT lanes_exp[kPackets];
             #pragma HLS ARRAY_PARTITION variable=lanes_exp complete
@@ -162,7 +165,7 @@ static void compute_engine(StreamT &inStream, StreamT &outStream, uint64_t size,
                 lanes_exp[i] = v_exp;
                 raw_exp.range((i+1)*kPaddedWidth-1, i*kPaddedWidth) = GET_RAW(v_exp);
             }
-            internal_buffer[p] = raw_exp; // Guardar resultados exp para Pass 3
+            internal_buffer_out[p] = raw_exp; // Guardar resultados exp para Pass 3
             global_sum += sum_reduction_tree(lanes_exp);
         }
 
@@ -170,7 +173,7 @@ static void compute_engine(StreamT &inStream, StreamT &outStream, uint64_t size,
         DataT inv_sum = (DataT)1.0 / global_sum;
         p3_norm: for (uint64_t p = 0; p < n_packets; p++) {
             #pragma HLS PIPELINE II=1
-            RawDataT raw = internal_buffer[p];
+            RawDataT raw = internal_buffer_out[p];
             RawDataT raw_out;
             for(int i=0; i<kPackets; i++) {
                 #pragma HLS UNROLL
