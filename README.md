@@ -74,7 +74,7 @@ pip install numpy matplotlib
 ├── pwl_non_uniform_tb.cpp    # Testbench
 ├── pwl_non_uniform.tcl       # HLS automation script
 ├── Makefile                  # Full Vitis build flow
-└── lut_coeffs.h              # Generated header (not tracked)
+└── lut_coeffs.h              # Generated header
 ```
 
 ---
