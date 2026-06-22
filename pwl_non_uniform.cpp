@@ -1,26 +1,23 @@
-/*
-Autor: Patrick Hugo Nepveu Nelson
-Año: 2026 ECASLab
-*/
+// Author: Patrick Hugo Nepveu Nelson <patrick.nepveu.ecaslab@gmail.com>
+// Year: 2026 
+// ECASLab
 
-#include "pwl_no_uniforme.h"
+#include "pwl_non_uniform.h"
 
-
-// Reduction tree para suma
-static DataT sum_reduction_tree(DataT elements[kPackets]) { //Recibe vector de tamaño kPackets donde kPackets = kBusWidth / kPaddedWidth;
+// Reduction tree for summation
+static AccT sum_reduction_tree(AccT elements[kPackets]) { // Accepts vector of size kPackets where kPackets = kBusWidth / kPaddedWidth;
     #pragma HLS INLINE
-    DataT tree[kPackets];
-    // Cada elemento se convierte en un registro independiente para leer todos los valores en paralelo
+    AccT tree[kPackets];
+    // Each element becomes an independent register to read all values in parallel
     #pragma HLS ARRAY_PARTITION variable=tree complete
 
-    // Copia el array elements en tree, todo en el mismo ciclo para preparar el árbol de reducción
+    // Copy the elements array into tree within a single clock cycle to prepare the reduction tree
     init: for(int i=0; i<kPackets; i++) {
         #pragma HLS UNROLL
         tree[i] = elements[i];
-
     }
 
-    // Aquí se implementa el árbol binario de reducción - iteraciones log2(kPackets)
+    // Binary reduction tree implementation - log2(kPackets) iterations
     levels: for (int curr_size = kPackets / 2; curr_size > 0; curr_size /= 2) {
         #pragma HLS UNROLL
         reduce: for (int i = 0; i < curr_size; i++) {
@@ -31,34 +28,32 @@ static DataT sum_reduction_tree(DataT elements[kPackets]) { //Recibe vector de t
     return tree[0];
 }
 
-// Reduction tree para max
-static DataT max_reduction_tree(DataT elements[kPackets]) { //Recibe vector de tamaño kPackets donde kPackets = kBusWidth / kPaddedWidth;
+// Reduction tree for maximum value calculation
+static DataT max_reduction_tree(DataT elements[kPackets]) { // Accepts vector of size kPackets where kPackets = kBusWidth / kPaddedWidth;
     #pragma HLS INLINE
     DataT tree[kPackets];
-    // Cada elemento se convierte en un registro independiente para leer todos los valores en paralelo
+    // Each element becomes an independent register to read all values in parallel
     #pragma HLS ARRAY_PARTITION variable=tree complete
 
-    // Copia el array elements en tree, todo en el mismo ciclo para preparar el árbol de reducción  
+    // Copy the elements array into tree within a single clock cycle to prepare the reduction tree  
     init: for(int i=0; i<kPackets; i++) {
         #pragma HLS UNROLL
         tree[i] = elements[i];
-
     }
 
     levels: for (int curr_size = kPackets / 2; curr_size > 0; curr_size /= 2) {
         #pragma HLS UNROLL
         reduce: for (int i = 0; i < curr_size; i++) {
             #pragma HLS UNROLL
-            // operador ternario para encontrar el valor máximo entre dos elementos contiguos del árbol y guardarlo en la posición actual
+            // Ternary operator to find the maximum value between two contiguous tree elements and store it in the current position
             tree[i] = (tree[i*2] > tree[i*2+1]) ? tree[i*2] : tree[i*2+1];
-
         }
     }
     return tree[0];
 }
 
-// Motor matemático
-static DataT compute_pwl(DataT x,
+// Mathematical Engine
+static AccT compute_pwl(DataT x,
                          const uint8_t segment_map[MAP_SIZE],
                          const RawStorageT x0_l[MAX_SEG],
                          const RawStorageT m_l[MAX_SEG],
@@ -66,54 +61,56 @@ static DataT compute_pwl(DataT x,
                          RawStorageT X_MIN_val, RawStorageT X_MAX_val) {
     #pragma HLS INLINE
 
-    // Convertir valores crudos (bits) a tipo DataT
+    // Convert raw bit-patterns to DataT type
     DataT x_min; x_min.V = X_MIN_val;
     DataT x_max; x_max.V = X_MAX_val;
     
-    // Clamping: limita x al rango permitido [x_min, x_max]
+    // Clamping: Restrict x to the allowed boundaries [x_min, x_max]
     DataT x_clamped = (x > x_max) ? x_max : (x < x_min) ? x_min : x;
 
-    // Calcular offset respecto al mínimo
+    // Calculate offset relative to the minimum limit
     DataT offset = x_clamped - x_min;
 
     // Index Lookup (Bit Slicing)
     constexpr int shift_val = (KDATAWIDTH_FIXED - KFXPDATAINT) - 6;
-    // Extraer bits relevantes para generar índice
+    // Extract relevant bits to generate the map index
     uint16_t map_idx = (uint16_t)(offset.range(KDATAWIDTH_FIXED-1, (shift_val < 0 ? 0 : shift_val)));
     if (map_idx > (MAP_SIZE - 1)) map_idx = MAP_SIZE - 1;
-    // Obtener ID del segmento correspondiente
+    // Retrieve the corresponding segment ID
     uint8_t seg_id = segment_map[map_idx];
 
-    // Motor PWL: y = m*(x-x0) + b
+    // PWL Engine Core Calculation: y = m*(x-x0) + b
     DataT x0_v, m_v, b_v;
-    // Convertir coeficientes de formato raw a DataT
+    // Convert coefficients from raw formats back to DataT
     x0_v.V = x0_l[seg_id];
     m_v.V  = m_l[seg_id];
     b_v.V  = b_l[seg_id];
 
     DataT diff = x_clamped - x0_v;
-    DataT prod;
-    // Fuerzar uso de DSP y pipeline interno
-    #pragma HLS BIND_OP variable=prod op=mul impl=dsp latency=2 
-    prod = m_v * diff;
+    AccT m_acc = (AccT)m_v;
+    AccT b_acc = (AccT)b_v;
+    AccT res = m_acc * (AccT)diff + b_acc;
+    // Force DSP usage and internal pipeline behavior if needed
+    // #pragma HLS BIND_OP variable=prod op=mul impl=dsp latency=2 
     
-    // Resultado final del segmento
-    return prod + b_v;
+    // Final segment output execution context
+    return res;
 }
 
 static void load_input(RawDataT *in, StreamT &inStream, uint64_t size) {
     #pragma HLS INLINE off
-     // Número de paquetes de 512 bits
+    // Number of 512-bit wide packet transfers
     const uint64_t n_packets = size / kPackets;
     for (uint64_t i = 0; i < n_packets; i++) {
         #pragma HLS PIPELINE II=1
-        // Lee desde memoria global (AXI) y lo empuja al stream
+        #pragma HLS loop_tripcount max=kTotalMaxSize
+        // Read from Global Memory and push into local hardware stream
         inStream << in[i];
     }
 }
 
 static void compute_engine(StreamT &inStream, StreamT &outStream, uint64_t size,
-                           const uint8_t segment_map[MAP_SIZE],
+                           const uint8_t segment_map[kPackets][MAP_SIZE],
                            const RawStorageT x0_l[MAX_SEG],
                            const RawStorageT m_l[MAX_SEG],
                            const RawStorageT b_l[MAX_SEG],
@@ -121,24 +118,23 @@ static void compute_engine(StreamT &inStream, StreamT &outStream, uint64_t size,
                            int mode) {
     #pragma HLS INLINE off
     const uint64_t n_packets = size / kPackets;
-
-    // Buffers de 512 bits para guardar paquetes completos en 1 ciclo
-    // Usar dos para eliminar la dependencia RAW (Read-After-Write)
+    // 512-bit wide local block buffers to store full packet transactions in 1 clock cycle
+    // Two independent buffers are used to eliminate RAW (Read-After-Write) hazard dependencies
     static RawDataT internal_buffer_in[2048];
     static RawDataT internal_buffer_out[2048]; 
     #pragma HLS BIND_STORAGE variable=internal_buffer_in type=ram_2p impl=uram
     #pragma HLS BIND_STORAGE variable=internal_buffer_out type=ram_2p impl=uram
-
-    if (mode == 1) { // Modo softmax
-        // Pass 1: Máximo global
-        DataT global_max;
-        global_max.V = (RawStorageT)(1U << (KDATAWIDTH_FIXED - 1)); // Minimo posible
-
+    
+    // Pass 1
+    DataT global_max;
+    if (mode == 1) { // Softmax Mode
+        global_max.V = (RawStorageT)(1U << (KDATAWIDTH_FIXED - 1)); // Minimum possible value fallback
+        // Pass 1: Global Maximum Extraction
         p1_max: for (uint64_t p = 0; p < n_packets; p++) {
             #pragma HLS PIPELINE II=1
+            #pragma HLS loop_tripcount max=kTotalMaxSize
             RawDataT raw = inStream.read();
-            internal_buffer_in[p] = raw; // Buffer para Pass 2
-            
+            internal_buffer_in[p] = raw; // Stash in buffer for Pass 2 (softmax context)
             DataT lanes[kPackets];
             #pragma HLS ARRAY_PARTITION variable=lanes complete
             for(int i=0; i<kPackets; i++) {
@@ -148,72 +144,74 @@ static void compute_engine(StreamT &inStream, StreamT &outStream, uint64_t size,
             DataT p_max = max_reduction_tree(lanes);
             if (p_max > global_max) global_max = p_max;
         }
-
-        // Pass 2: Exponencial y suma
-        DataT global_sum = 0;
-        p2_exp_sum: for (uint64_t p = 0; p < n_packets; p++) {
+    } else {
+        // Pointwise Bypass: If mode == 0, max acts as 0, resolving expressions like (x - 0) = x
+        global_max = 0; 
+        p1_bypass: for (uint64_t p = 0; p < n_packets; p++) {
             #pragma HLS PIPELINE II=1
-            RawDataT raw = internal_buffer_in[p];
-            RawDataT raw_exp;
-            DataT lanes_exp[kPackets];
-            #pragma HLS ARRAY_PARTITION variable=lanes_exp complete
-
-            for(int i=0; i<kPackets; i++) {
-                #pragma HLS UNROLL
-                DataT v = GET_NUMBER<DataT>(raw.range((i+1)*kPaddedWidth-1, i*kPaddedWidth));
-                DataT v_exp = compute_pwl(v - global_max, segment_map, x0_l, m_l, b_l, X_MIN, X_MAX);
-                lanes_exp[i] = v_exp;
-                raw_exp.range((i+1)*kPaddedWidth-1, i*kPaddedWidth) = GET_RAW(v_exp);
-            }
-            internal_buffer_out[p] = raw_exp; // Guardar resultados exp para Pass 3
-            global_sum += sum_reduction_tree(lanes_exp);
+            #pragma HLS loop_tripcount max=kTotalMaxSize
+            internal_buffer_in[p] = inStream.read(); // Stash in buffer for Pass 2 (pointwise context)
         }
+    }
 
-        // Pass 3: Normalización
-        DataT inv_sum = (DataT)1.0 / global_sum;
+    // Pass 2: Unified compute_pwl execution wrapper reusing pipelines for Softmax and Pointwise blocks
+    AccT global_sum = 0; // Guard against intermediate overflow using AccT
+    p2_unified: for (uint64_t p = 0; p < n_packets; p++) {
+        #pragma HLS PIPELINE II=1
+        #pragma HLS loop_tripcount max=kTotalMaxSize
+        RawDataT raw = internal_buffer_in[p];
+        RawDataT raw_res;
+        AccT lanes_res[kPackets];
+        #pragma HLS ARRAY_PARTITION variable=lanes_res complete
+
+        for(int i=0; i<kPackets; i++) {
+            #pragma HLS UNROLL
+            DataT v = GET_NUMBER<DataT>(raw.range((i+1)*kPaddedWidth-1, i*kPaddedWidth));
+            // All kPackets compute_pwl arithmetic lines handle Softmax AND Pointwise actions - functional hardware reuse
+            AccT v_res = compute_pwl(v - global_max, segment_map[i], x0_l, m_l, b_l, X_MIN, X_MAX);
+            lanes_res[i] = v_res;
+            raw_res.range((i+1)*kPaddedWidth-1, i*kPaddedWidth) = GET_RAW((DataT)v_res);
+        }
+        
+        if (mode == 0) {
+            // Pointwise Bypass routing: bypass local buffers and dump directly into output streams
+            outStream << raw_res; 
+        } else {
+            // Softmax tracking routing: retain current results inside Pass 3 arrays and execute summation reduction
+            internal_buffer_out[p] = raw_res;
+            global_sum += sum_reduction_tree(lanes_res);
+        }
+    }
+
+    // Pass 3: Normalization Phase - Isolated block explicitly allocated for Softmax conditions (mode == 1)
+    if (mode == 1) {
+        AccT inv_sum = (AccT)1.0 / global_sum;
         p3_norm: for (uint64_t p = 0; p < n_packets; p++) {
             #pragma HLS PIPELINE II=1
+            #pragma HLS loop_tripcount max=kTotalMaxSize
             RawDataT raw = internal_buffer_out[p];
             RawDataT raw_out;
             for(int i=0; i<kPackets; i++) {
                 #pragma HLS UNROLL
-                DataT v = GET_NUMBER<DataT>(raw.range((i+1)*kPaddedWidth-1, i*kPaddedWidth));
-                DataT v_norm;
-                #pragma HLS BIND_OP variable=v_norm op=mul impl=dsp latency=3
-                v_norm = v * inv_sum;
-                raw_out.range((i+1)*kPaddedWidth-1, i*kPaddedWidth) = GET_RAW(v_norm);
-            }
-            outStream << raw_out;
-        }
-    } else { // Modo pointwise
-        p0_direct: for (uint64_t p = 0; p < n_packets; p++) {
-            #pragma HLS PIPELINE II=1
-            RawDataT raw_in = inStream.read();
-            RawDataT raw_out;
-            for (int i = 0; i < kPackets; i++) {
-                #pragma HLS UNROLL
-                DataT v = GET_NUMBER<DataT>(raw_in.range((i+1)*kPaddedWidth-1, i*kPaddedWidth));
-                DataT v_out = compute_pwl(v, segment_map, x0_l, m_l, b_l, X_MIN, X_MAX);
-                raw_out.range((i+1)*kPaddedWidth-1, i*kPaddedWidth) = GET_RAW(v_out);
+                // Extract previously calculated exponential value
+                DataT v_exp;
+                v_exp.V = raw.range((i+1)*kPaddedWidth-1, i*kPaddedWidth);
+                AccT v_norm_wide = (AccT)v_exp * inv_sum;
+                #pragma HLS BIND_OP variable=v_norm_wide op=mul impl=dsp latency=3
+                // Mitigation of truncation errors via Convergent Rounding schemes
+                // const AccT rounding_bit = (AccT)1 << (12 - 1);
+                DataT v_norm = (DataT)v_norm_wide;
+                // v_norm = (DataT)(v_norm_wide + rounding_bit);
+                raw_out.range((i+1)*kPaddedWidth-1, i*kPaddedWidth) = v_norm.range();
             }
             outStream << raw_out;
         }
     }
 }
 
-static void store_result(RawDataT *out, StreamT &outStream, uint64_t size) {
-    #pragma HLS INLINE off
-    const uint64_t n_packets = size / kPackets;
-    for (uint64_t i = 0; i < n_packets; i++) {
-        #pragma HLS PIPELINE II=1
-        // Escribe desde stream a memoria global
-        out[i] = outStream.read();
-    }
-}
-
-// Wrapper para determinar los 3 procesos concurrentes en hardware - Dataflow Canonical Form
+// Execution Wrapper scheduling 3 concurrent dataflow procedures - Canonical Dataflow Form
 static void execution_wrapper(RawDataT *in, RawDataT *out, uint64_t size,
-                              const uint8_t segment_map_l[MAP_SIZE],
+                              const uint8_t segment_map_l[kPackets][MAP_SIZE],
                               const RawStorageT x0_l[MAX_SEG],
                               const RawStorageT m_l[MAX_SEG],
                               const RawStorageT b_l[MAX_SEG],
@@ -231,7 +229,7 @@ static void execution_wrapper(RawDataT *in, RawDataT *out, uint64_t size,
 }
 
 extern "C" {
-void pwl_no_uniforme(RawDataT *in, RawDataT *out, uint64_t size,
+void pwl_non_uniform(RawDataT *in, RawDataT *out, uint64_t size,
                      const uint8_t segment_map[MAP_SIZE],
                      const RawStorageT x0_in[MAX_SEG],
                      const RawStorageT m_in[MAX_SEG],
@@ -240,8 +238,8 @@ void pwl_no_uniforme(RawDataT *in, RawDataT *out, uint64_t size,
                      RawStorageT X_MIN, RawStorageT X_MAX,
                      bool reload, int mode) {
 
-    #pragma HLS INTERFACE m_axi port=in  offset=slave bundle=gmem0 depth=1024
-    #pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem1 depth=1024
+    #pragma HLS INTERFACE m_axi port=in  offset=slave bundle=gmem0 depth=kTotalMaxSize
+    #pragma HLS INTERFACE m_axi port=out offset=slave bundle=gmem1 depth=kTotalMaxSize
     #pragma HLS INTERFACE s_axilite port=segment_map bundle=control
     #pragma HLS INTERFACE s_axilite port=x0_in       bundle=control
     #pragma HLS INTERFACE s_axilite port=m_in        bundle=control
@@ -256,34 +254,28 @@ void pwl_no_uniforme(RawDataT *in, RawDataT *out, uint64_t size,
     #pragma HLS INTERFACE s_axilite port=reload      bundle=control
     #pragma HLS INTERFACE s_axilite port=mode        bundle=control
 
-    static uint8_t segment_map_local[MAP_SIZE];
+    // Memory Banking with Redundancy Arrays
+    static uint8_t segment_map_local[kPackets][MAP_SIZE];
     static RawStorageT x0_local[MAX_SEG];
     static RawStorageT m_local[MAX_SEG];
     static RawStorageT b_local[MAX_SEG];
 
-    /*
-    #pragma HLS ARRAY_PARTITION variable=segment_map_local complete
+    // Memory Banking Array Partitioning Strategy Design
+    #pragma HLS ARRAY_PARTITION variable=segment_map_local complete dim=1
+    #pragma HLS ARRAY_PARTITION variable=segment_map_local cyclic factor=2 dim=2
     #pragma HLS ARRAY_PARTITION variable=x0_local complete
     #pragma HLS ARRAY_PARTITION variable=m_local complete
     #pragma HLS ARRAY_PARTITION variable=b_local complete
-    */
-
-    
-    #pragma HLS ARRAY_PARTITION variable=segment_map_local cyclic factor=kPackets
-    #pragma HLS BIND_STORAGE variable=segment_map_local type=ram_2p impl=lutram
-
-    #pragma HLS ARRAY_PARTITION variable=x0_local cyclic factor=kPackets
-    #pragma HLS ARRAY_PARTITION variable=m_local  cyclic factor=kPackets
-    #pragma HLS ARRAY_PARTITION variable=b_local  cyclic factor=kPackets
-    #pragma HLS BIND_STORAGE variable=x0_local type=ram_2p impl=lutram
-    #pragma HLS BIND_STORAGE variable=m_local  type=ram_2p impl=lutram
-    #pragma HLS BIND_STORAGE variable=b_local  type=ram_2p impl=lutram
-    
 
     if (reload) {
         init_map: for (int i = 0; i < MAP_SIZE; i++) {
             #pragma HLS PIPELINE II=1
-            segment_map_local[i] = segment_map[i];
+            uint8_t val = segment_map[i];
+            for(int j = 0; j < kPackets; j++){
+                #pragma HLS UNROLL
+                // Synchronous broadcast: update all lanes concurrently with value 'val'
+                segment_map_local[j][i] = val;
+            }
         }
         init_coefs: for (int i = 0; i < MAX_SEG; i++) {
             #pragma HLS PIPELINE II=1

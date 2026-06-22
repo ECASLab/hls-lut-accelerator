@@ -1,10 +1,10 @@
-/*
-Autor: Patrick Hugo Nepveu Nelson <patrick.cr1405@gmail.com>
-Año: 2026 ECASLab
-*/
+// Author: Patrick Hugo Nepveu Nelson <patrick.nepveu.ecaslab@gmail.com>
+// Year: 2026 
+// ECASLab
 
-#ifndef __PWL_NO_UNIFORME__
-#define __PWL_NO_UNIFORME__
+
+#ifndef __PWL_NON_UNIFORM__
+#define __PWL_NON_UNIFORM__
 
 #include <stdint.h>
 #include <ap_int.h>
@@ -12,26 +12,26 @@ Año: 2026 ECASLab
 #include <hls_stream.h>
 #include <type_traits>
 
-// Data width - número total de bits y bits de la parte entera (incluyendo signo)
+// Data width - total number of bits and integer bits (including sign)
 #ifndef KDATAWIDTH_FIXED
-#define KDATAWIDTH_FIXED 12
+#define KDATAWIDTH_FIXED 32
 #endif
 static constexpr int kDataWidth = KDATAWIDTH_FIXED;
 #ifndef KFXPDATAINT
-#define KFXPDATAINT 6
+#define KFXPDATAINT 8
 #endif 
 
-// Tamaño del vector
+// Array / Vector dimensions
 #ifndef KCOLS
 #define KCOLS 16
 #endif
 #ifndef KROWS
-#define KROWS 16
+#define KROWS 64
 #endif
 static constexpr int kCols = KCOLS;
 static constexpr int kRows = KROWS;
 
-// Número máximo de segmentos y tamaño del mapa uniforme
+// Maximum number of segments and uniform mapping table size
 #ifndef MAX_SEG
 #define MAX_SEG 128
 #endif
@@ -39,7 +39,7 @@ static constexpr int kRows = KROWS;
 #define MAP_SIZE 512
 #endif
 
-// Almacenimiento del raw bit-pattern
+// Raw bit-pattern storage type assignment
 #if(KDATAWIDTH_FIXED <= 16)
     typedef uint16_t RawStorageT;
 #elif (KDATAWIDTH_FIXED <= 32)
@@ -48,35 +48,37 @@ static constexpr int kRows = KROWS;
     typedef uint64_t RawStorageT;
 #endif
 
-// Padding para asegurar tamaños alineados
+typedef ap_fixed<KDATAWIDTH_FIXED + 16, KFXPDATAINT + 12> AccT;
+
+// Padding to guarantee aligned sizes
 static constexpr int kPaddedWidth = (KDATAWIDTH_FIXED <= 8)  ? 8 :
                                     (KDATAWIDTH_FIXED <= 16) ? 16 :
                                     (KDATAWIDTH_FIXED <= 32) ? 32 : 64;
 
-// Bus Width y parámetros AXI
+// Bus Width and AXI parameters
 #ifndef KBUSWIDTH
 #define KBUSWIDTH 512 // 512-bit wide AXI4
 #endif
 static constexpr int kBusWidth = KBUSWIDTH;
 
-// Tipo numérico para computación
+// Numeric type used for computation
 using DataT = ap_fixed<KDATAWIDTH_FIXED, KFXPDATAINT>;
 
-// Cantidad de números que contiene una palabra de 512 bits 
+// Number of packed data values contained within a single 512-bit word
 static constexpr int kPackets = kBusWidth / kPaddedWidth;
 
-// Cantidad de palabras de 512 bits para procesar el dataset completo
+// Total number of 512-bit words required to process the complete dataset
 static constexpr uint64_t kTotalMaxSize = kCols * kRows / kPackets;
 
-// Contenedor de 512 bits utilizado para I/O
+// 512-bit wide container utilized for I/O operations
 using RawDataT = ap_uint<kBusWidth>;
 
-// Type alias para hls::stream
+// Type alias for hls::stream
 using StreamT = hls::stream<RawDataT>;
 
 /**
- * @brief Convierte bits crudos del bus AXI al tipo de dato DataT (ap_fixed).
- * @param raw Segmento de bits del bus.
+ * @brief Converts raw bits from the AXI bus into the target DataT (ap_fixed) data type.
+ * @param raw Bit segment slice from the bus.
  */
 template <typename T>
 inline T GET_NUMBER(const ap_uint<kDataWidth>& raw) {
@@ -88,10 +90,11 @@ inline T GET_NUMBER(const ap_uint<kDataWidth>& raw) {
 
 
 /**
- * @brief Empaqueta el valor DataT de vuelta a bits crudos para el bus AXI.
- * @param val Valor en punto fijo.
+ * @brief Packs a DataT fixed-point value back into raw bits for the AXI bus.
+ * @param val Fixed-point value to capture.
  */
-inline ap_uint<kDataWidth> GET_RAW(const DataT& val) {
+template <typename T>
+inline ap_uint<kDataWidth> GET_RAW(const T& val) {
     #pragma HLS INLINE
     return val.range(kDataWidth - 1, 0);
 }
@@ -99,7 +102,7 @@ inline ap_uint<kDataWidth> GET_RAW(const DataT& val) {
 
 extern "C" {
 
-void pwl_no_uniforme(
+void pwl_non_uniform(
     RawDataT *in, 
     RawDataT *out, 
     uint64_t size,
@@ -115,4 +118,4 @@ void pwl_no_uniforme(
 );
 }
 
-#endif // __PWL_NO_UNIFORME_H__
+#endif // __PWL_NON_UNIFORM__
