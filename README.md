@@ -190,10 +190,13 @@ make cleanall
 
 ```bibtex
 @misc{pwl_nonuniform_fpga,
-  title  = {Non-Uniform Piecewise Linear Approximation Accelerator for FPGA-based Machine Learning Inference},
+  title  = {Design of an HLS-based interpolation unit with configurable multi-access memory for the acceleration of LLM inference on FPGAs},
   author = {Patrick Hugo Nepveu Nelson},
   year   = {2026},
-  note   = {Engineering Thesis, Tecnológico de Costa Rica. Hardware validated on AMD Alveo U55C. For the updated peer-reviewed paper citation, see the Zenodo repository landing page.}
+  howpublished = {Zenodo},
+  doi    = {10.5281/zenodo.20836965},
+  url    = {https://doi.org/10.5281/zenodo.20836965},
+  note   = {Source code supporting the Engineering Thesis, Tecnológico de Costa Rica. Hardware validated on AMD Alveo U55C.}
 }
 ```
 
