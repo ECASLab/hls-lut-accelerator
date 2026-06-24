@@ -193,7 +193,7 @@ make cleanall
   title  = {Non-Uniform Piecewise Linear Approximation Accelerator for FPGA-based Machine Learning Inference},
   author = {Patrick Hugo Nepveu Nelson},
   year   = {2026},
-  note   = {Engineering thesis (Tecnológico de Costa Rica) and conference submission under review. Hardware validated on AMD Alveo U55C.}
+  note   = {Engineering Thesis, Tecnológico de Costa Rica. Hardware validated on AMD Alveo U55C. For the updated peer-reviewed paper citation, see the Zenodo repository landing page.}
 }
 ```
 
