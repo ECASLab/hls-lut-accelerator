@@ -22,7 +22,7 @@ This repository includes:
 
 # 2. Scope
 
-This repository supports the results presented in the associated thesis and conference submission under review.
+This repository contains the source code supporting the associated thesis published via the Tecnológico de Costa Rica (TEC) repository and the corresponding conference submission. For citations and access to the full text documents, please refer to the primary metadata records listed on the landing page of this DOI repository.
 
 It enables reproduction of:
 - Fixed-point PWL coefficient generation
